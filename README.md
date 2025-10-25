@@ -8,7 +8,7 @@ Transkribus exports present a structural challenge for researchers working with 
 
 The restructuring tool addresses this problem by removing the intermediary numerical directories and relocating all user-named collections directly beneath the main export directory. This flattening operation transforms an opaque nested structure into an immediately comprehensible organisation that reflects the researcher's original naming conventions. Simultaneously, the tool preserves the relationship between Transkribus identifiers and collection names by generating a CSV file that documents these correspondences. This mapping file serves as a reference for troubleshooting, enables correlation between exported materials and collections visible in the Transkribus interface, and provides a record of the relationship between external and internal identifiers.
 
-The tool is designed for researchers who have exported multiple collections from Transkribus and require efficient access to their materials without navigating through layers of numerical directories. By automating the restructuring process, the tool eliminates manual directory manipulation and ensures consistent handling of naming conflicts that may arise when multiple collections share identical names.
+The tool is designed for researchers who have exported multiple collections from Transkribus and require efficient access to their materials without navigating through layers of numerical directories. By automating the restructuring process, the tool eliminates manual directory manipulation and ensures consistent handling of naming conflicts that may arise when multiple collections share identical names. The tool includes robust error handling specifically designed for Windows environments and OneDrive synchronisation, addressing common permission issues that arise when manipulating directories in cloud-synchronised locations.
 
 ## Features
 
@@ -17,6 +17,8 @@ The restructuring tool provides several capabilities designed to streamline post
 After documenting the mappings, the tool relocates all user-named folders to the root of the export directory, removing the now-empty numerical directories. This restructuring operation handles naming conflicts gracefully by appending numerical suffixes to duplicate folder names, ensuring that no data is lost when multiple collections share the same user-defined name. The tool provides comprehensive progress reporting throughout execution, displaying each collection being processed and alerting the researcher to any anomalous structures such as empty numerical directories or directories containing multiple subfolders.
 
 The restructuring process operates in place, modifying the existing directory structure rather than creating copies. This approach conserves storage space and ensures that researchers work with a single definitive version of their exported materials. All operations preserve the complete internal structure of each collection, including subdirectories, files, and the hierarchical relationships between them.
+
+The tool incorporates robust error handling specifically designed for Windows environments and cloud-synchronised directories. When directory removal operations encounter permission errors (common with OneDrive, Dropbox, or similar synchronisation services), the tool implements retry logic with appropriate delays to allow file system operations to complete. If directories cannot be removed automatically due to persistent permission issues or hidden system files, the tool continues processing and reports which directories require manual attention, ensuring that the restructuring operation completes successfully even in challenging file system conditions.
 
 ## Requirements
 
@@ -175,29 +177,57 @@ Warning: Multiple subfolders in 789017: ['FolderA', 'FolderB']
 
 These warnings indicate situations requiring manual review. Empty folders may represent collections that were not properly exported or were deleted after export creation. Directories containing multiple subfolders suggest an unexpected export structure that may require special handling.
 
+When the tool encounters permission issues during directory removal (common with OneDrive or other cloud synchronisation services), it displays retry messages:
+
+```
+Processing: 789012 -> CollectionNameOne
+  Retry 1/2: Waiting for file system...
+```
+
+This output indicates that the tool encountered a temporary permission issue when attempting to remove the empty numerical directory and is waiting briefly before retrying. These messages are normal when working with cloud-synchronised directories and do not indicate errors.
+
+If a directory cannot be removed after multiple retry attempts, the tool reports this and continues:
+
+```
+Processing: 789013 -> CollectionNameTwo
+  Warning: Could not remove directory 789013 - you may need to delete it manually
+```
+
+This situation occurs occasionally with cloud-synchronised directories where the synchronisation service maintains temporary locks. The collection contents have been successfully moved, and the remaining empty directory can be deleted manually once cloud synchronisation completes.
+
 Upon completion, the tool reports the location of the mapping file and summary statistics:
 
 ```
+Moving folders to final location...
+Moved: CollectionNameOne
+Moved: CollectionNameTwo
+Moved: CollectionNameThree
+
 Mapping saved to: C:\Users\Username\Downloads\export_job_123456\transkribus_id_mapping.csv
 
 Restructuring complete. Processed 118 folders.
 All folders now directly under: C:\Users\Username\Downloads\export_job_123456
+
+Note: 2 empty Transkribus ID folders could not be removed automatically:
+  - 789012
+  - 789013
+You may delete these manually if desired.
 ```
 
-These statistics allow researchers to verify that all expected collections were processed and that the restructuring completed successfully.
+These statistics allow researchers to verify that all expected collections were processed and that the restructuring completed successfully. The optional note about directories that could not be removed provides a clear list for manual cleanup if desired.
 
 ## CSV Mapping File
 
-The generated CSV file serves as a permanent record of the relationship between Transkribus internal identifiers and user-assigned collection names. The file uses standard CSV formatting with comma-separated values and UTF-8 encoding to support collection names containing non-ASCII characters. The first row contains column headers "Transkribus ID" and "Folder Name", followed by data rows sorted numerically by identifier.
+The generated CSV file serves as a permanent record of the relationship between Transkribus internal identifiers and user-assigned collection names. The file uses semicolon (`;`) as the delimiter to ensure proper display in Microsoft Excel on Windows systems with Dutch regional settings. The file employs UTF-8 encoding with BOM (Byte Order Mark) to ensure Excel correctly recognises character encoding for collection names containing non-ASCII characters. The first row contains column headers "Transkribus ID" and "Folder Name", followed by data rows sorted numerically by identifier.
 
 A representative mapping file appears as:
 
 ```csv
-Transkribus ID,Folder Name
-789012,CollectionNameOne
-789013,CollectionNameTwo
-789014,CollectionNameThree
-789015,CollectionNameOne_1
+Transkribus ID;Folder Name
+789012;CollectionNameOne
+789013;CollectionNameTwo
+789014;CollectionNameThree
+789015;CollectionNameOne_1
 ```
 
 This mapping proves valuable in several research scenarios. When correlating exported materials with collections visible in the Transkribus web interface, the numerical identifiers provide the necessary link. When troubleshooting export issues or verifying completeness, the mapping allows researchers to confirm that all expected collections were included in the export. When documenting research workflows, the mapping file serves as a record of which Transkribus collections contributed to subsequent analyses.
@@ -216,7 +246,13 @@ The CSV format facilitates integration with other tools and workflows. Researche
 
 **Problem**: The tool reports permission errors when attempting to move directories or create files.
 
-**Solution**: Ensure that you have write permissions for the export directory and all its contents. On Windows systems, confirm that no files within the export directory are currently open in other applications, as this can prevent directory operations. On Unix-like systems, check the ownership and permissions of the directory using `ls -la` and modify as necessary using `chmod` or `chown`. Running the script with elevated privileges may be necessary in some environments, though this should not generally be required for directories in user-controlled locations.
+**Solution**: Ensure that you have write permissions for the export directory and all its contents. On Windows systems, confirm that no files within the export directory are currently open in other applications, as this can prevent directory operations. 
+
+**Windows and OneDrive Specific Issues**: When working with directories synchronised by OneDrive, Dropbox, or similar cloud storage services, permission errors are particularly common. These services may temporarily lock directories during synchronisation operations, preventing immediate deletion. The restructuring tool includes automatic retry logic with delays to accommodate these situations. If you see messages such as "Retry 1/2: Waiting for file system...", the tool is automatically handling these temporary permission issues.
+
+If the tool reports "Warning: Could not remove directory [name] - you may need to delete it manually", this indicates that empty numerical directories could not be removed after multiple retry attempts. This situation is purely cosmetic and does not affect the restructuring operation. The collection contents have been successfully moved, and you may manually delete any remaining empty numerical directories at your convenience. OneDrive synchronisation often resolves these permission issues after a brief period, allowing manual deletion shortly after the tool completes.
+
+On Unix-like systems, check the ownership and permissions of the directory using `ls -la` and modify as necessary using `chmod` or `chown`. Running the script with elevated privileges may be necessary in some environments, though this should not generally be required for directories in user-controlled locations.
 
 ### Empty numerical directories
 
@@ -238,9 +274,18 @@ The CSV format facilitates integration with other tools and workflows. Researche
 
 ### CSV file encoding problems
 
-**Problem**: The mapping CSV file displays garbled characters when opened in certain applications.
+**Problem**: The mapping CSV file displays garbled characters when opened in certain applications, or appears as a single column instead of two separate columns.
 
-**Solution**: The tool writes CSV files using UTF-8 encoding to support collection names containing characters from various writing systems. Some applications, particularly older versions of Microsoft Excel, do not automatically detect UTF-8 encoding. When opening the file in Excel, use the "Get Data" or "Import" function rather than double-clicking the file, and explicitly specify UTF-8 as the encoding. Alternatively, open the file in a text editor that supports UTF-8, such as Notepad++ or Visual Studio Code, to verify that the data is correctly encoded.
+**Solution**: The tool generates CSV files with semicolon (`;`) delimiters and UTF-8 encoding with BOM specifically for compatibility with Microsoft Excel on Windows systems. If the file appears to have only one column, this typically indicates that the application is expecting a different delimiter.
+
+For Excel users: Simply double-clicking the CSV file should open it correctly with two columns, as Excel on Windows recognises the semicolon delimiter when regional settings are set to Dutch or similar European locales.
+
+For other applications: If you need a comma-delimited version for use with Python scripts, database imports, or other tools, you can either:
+- Open the file in Excel and save it with comma delimiters using "Save As" and selecting CSV (Comma delimited)
+- Use a text editor to replace all semicolons with commas
+- Specify the semicolon delimiter when reading the file programmatically (e.g., `pd.read_csv('file.csv', delimiter=';')` in Python)
+
+If characters appear garbled: The file uses UTF-8 encoding with BOM to support collection names containing characters from various writing systems. Some older applications do not automatically detect UTF-8 encoding. When opening the file, explicitly specify UTF-8 as the encoding. In text editors like Notepad++ or Visual Studio Code, UTF-8 should be detected automatically.
 
 ### Restructuring appears to complete but folders remain nested
 
